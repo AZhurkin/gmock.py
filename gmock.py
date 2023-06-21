@@ -13,6 +13,7 @@ from clang.cindex import TranslationUnit
 from clang.cindex import Cursor
 from clang.cindex import CursorKind
 from clang.cindex import Config
+from clang.cindex import ExceptionSpecificationKind
 
 if sys.version_info < (3, 0):
     import __builtin__
@@ -64,18 +65,18 @@ class mock_method:
         'operator~'   : 'complement_operator'
     }
 
-    def __init__(self, result_type, name, is_const, is_template, args_size, args, args_prefix = 'arg'):
+    def __init__(self, result_type, name, is_const, is_template, args, args_types, exception_specification_kind): #_size, args, args_prefix = 'arg'):
         self.result_type = result_type
         self.name = name
         self.is_const = is_const
         self.is_template = is_template
-        self.args_size = args_size
         self.args = args
-        self.args_prefix = args_prefix
+        self.args_types = args_types
+        self.exception_specification_kind = exception_specification_kind
 
     def __named_args(self):
         result = []
-        for i in range(0, self.args_size):
+        for i in range(len(self.args)):
             i and result.append(', ')
             result.append(self.args_prefix + str(i))
         return ''.join(result)
@@ -115,16 +116,38 @@ class mock_method:
             )
             name = self.operators[self.name]
 
-        mock.append(gap)
+        mock.append(gap)        
+        
+        s = self.args_types[1:-1]
+        args = []
+        counter = 0
+        arg = ''
+        for symbol in s:
+            if counter == 0 and symbol == ',':
+                args.append(arg.strip())
+                arg = ''
+                continue
+            elif '<' == symbol:
+                counter += 1
+            elif '>' == symbol:
+                counter -= 1
+            arg += symbol
+            
+        args.append(arg.strip())
+        args = ', '.join([f'({arg})' for arg in args])
+        
+        attrs = ['override']
+        if self.is_const:
+            attrs.append('const')
+
+        if ExceptionSpecificationKind.BASIC_NOEXCEPT == self.exception_specification_kind:
+            attrs.append('noexcept')
+
+        attrs = ', '.join(attrs)    
+
         mock.append(
-            "MOCK_%(const)sMETHOD%(nr)s%(template)s(%(name)s, %(result_type)s(%(args)s));" % {
-            'const' : self.is_const and 'CONST_' or '',
-            'nr' : self.args_size,
-            'template' : self.is_template and '_T' or '',
-            'name' : name,
-            'result_type' : self.result_type,
-            'args' : self.args
-        })
+            f'MOCK_METHOD(({self.result_type}), {name}, {args}), ({attrs}));'
+        )
 
         return ''.join(mock)
 
@@ -176,6 +199,8 @@ class mock_generator:
     def __pretty_mock_methods(self, mock_methods):
         result = []
         for i, mock_method in enumerate(mock_methods):
+            print(f'type(mock_methods)={type(mock_methods)}')
+            print(f'mock_methods={mock_methods[0]}')
             i and result.append('\n')
             result.append(mock_method.to_string())
             first = False
@@ -214,14 +239,16 @@ class mock_generator:
             tokens = [token.spelling for token in node.get_tokens()]
             file = node.location.file.name
             if node.is_pure_virtual_method():
+                print(f'type(node)={type(node)}')
                 mock_methods.setdefault(expr, [file]).append(
                     mock_method(
                          self.__get_result_type(tokens, spelling),
                          spelling,
                          node.is_const_method(),
                          self.__is_template_class(expr),
-                         len(list(node.get_arguments())),
-                         name[len(node.spelling) + 1 : -1]
+                         node.get_arguments(),
+                         name,
+                         node.exception_specification_kind,
                     )
                 )
         elif node.kind in [CursorKind.CLASS_TEMPLATE, CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL, CursorKind.NAMESPACE]:
@@ -239,6 +266,9 @@ class mock_generator:
         }
         path = self.path + "/" + mock_file[file_type]
         not os.path.exists(os.path.dirname(path)) and os.makedirs(os.path.dirname(path))
+        print(10*'-')
+        print(self.__pretty_mock_methods(mock_methods[1:]))       
+        print(10*'-')
         with open(path, 'w') as file:
             file.write(file_template_type % {
                 'mock_file_hpp' : mock_file['hpp'],
