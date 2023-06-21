@@ -135,6 +135,9 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
+# Generated C++ mocks
+*Mock.hpp
+
 # mkdocs documentation
 /site
 
@@ -151,6 +154,9 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# VSCode
+.vscode/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

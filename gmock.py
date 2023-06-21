@@ -13,6 +13,7 @@ from clang.cindex import TranslationUnit
 from clang.cindex import Cursor
 from clang.cindex import CursorKind
 from clang.cindex import Config
+from clang.cindex import ExceptionSpecificationKind
 
 if sys.version_info < (3, 0):
     import __builtin__
@@ -64,18 +65,18 @@ class mock_method:
         'operator~'   : 'complement_operator'
     }
 
-    def __init__(self, result_type, name, is_const, is_template, args_size, args, args_prefix = 'arg'):
+    def __init__(self, result_type, name, is_const, is_template, args, args_types, exception_specification_kind): #_size, args, args_prefix = 'arg'):
         self.result_type = result_type
         self.name = name
         self.is_const = is_const
         self.is_template = is_template
-        self.args_size = args_size
         self.args = args
-        self.args_prefix = args_prefix
+        self.args_types = args_types
+        self.exception_specification_kind = exception_specification_kind
 
     def __named_args(self):
         result = []
-        for i in range(0, self.args_size):
+        for i in range(len(self.args)):
             i and result.append(', ')
             result.append(self.args_prefix + str(i))
         return ''.join(result)
@@ -115,16 +116,38 @@ class mock_method:
             )
             name = self.operators[self.name]
 
-        mock.append(gap)
+        mock.append(gap)        
+        
+        s = self.args_types[1:-1]
+        args = []
+        counter = 0
+        arg = ''
+        for symbol in s:
+            if counter == 0 and symbol == ',':
+                args.append(arg.strip())
+                arg = ''
+                continue
+            elif '<' == symbol:
+                counter += 1
+            elif '>' == symbol:
+                counter -= 1
+            arg += symbol
+            
+        args.append(arg.strip())
+        args = ', '.join([f'({arg})' for arg in args])
+        
+        attrs = ['override']
+        if self.is_const:
+            attrs.append('const')
+
+        if ExceptionSpecificationKind.BASIC_NOEXCEPT == self.exception_specification_kind:
+            attrs.append('noexcept')
+
+        attrs = ', '.join(attrs)    
+
         mock.append(
-            "MOCK_%(const)sMETHOD%(nr)s%(template)s(%(name)s, %(result_type)s(%(args)s));" % {
-            'const' : self.is_const and 'CONST_' or '',
-            'nr' : self.args_size,
-            'template' : self.is_template and '_T' or '',
-            'name' : name,
-            'result_type' : self.result_type,
-            'args' : self.args
-        })
+            f'MOCK_METHOD(({self.result_type}), {name}, {args}), ({attrs}));'
+        )
 
         return ''.join(mock)
 
@@ -208,11 +231,11 @@ class mock_generator:
         return ''.join(result)
 
     def __get_mock_methods(self, node, mock_methods, expr = ""):
-        name = str(node.displayname, self.encode)
+        name = node.displayname
         if node.kind == CursorKind.CXX_METHOD:
-            spelling = str(node.spelling, self.encode)
-            tokens = [str(token.spelling, self.encode) for token in node.get_tokens()]
-            file = str(node.location.file.name, self.encode)
+            spelling = node.spelling
+            tokens = [token.spelling for token in node.get_tokens()]
+            file = node.location.file.name
             if node.is_pure_virtual_method():
                 mock_methods.setdefault(expr, [file]).append(
                     mock_method(
@@ -220,8 +243,9 @@ class mock_generator:
                          spelling,
                          node.is_const_method(),
                          self.__is_template_class(expr),
-                         len(list(node.get_arguments())),
-                         name[len(node.spelling) + 1 : -1]
+                         node.get_arguments(),
+                         name,
+                         node.exception_specification_kind,
                     )
                 )
         elif node.kind in [CursorKind.CLASS_TEMPLATE, CursorKind.STRUCT_DECL, CursorKind.CLASS_DECL, CursorKind.NAMESPACE]:
@@ -239,6 +263,7 @@ class mock_generator:
         }
         path = self.path + "/" + mock_file[file_type]
         not os.path.exists(os.path.dirname(path)) and os.makedirs(os.path.dirname(path))
+        namespaces = f'{expr[:expr.rfind("::")]}::'
         with open(path, 'w') as file:
             file.write(file_template_type % {
                 'mock_file_hpp' : mock_file['hpp'],
@@ -247,12 +272,11 @@ class mock_generator:
                 'guard' : mock_file[file_type].replace('.', '_').upper(),
                 'dir' : os.path.dirname(mock_methods[0]),
                 'file' : os.path.basename(mock_methods[0]),
-                'namespaces_begin' : self.__pretty_namespaces_begin(expr),
+                'namespaces' : namespaces,
                 'interface' : interface,
                 'template_interface' : expr.split("::")[-1],
                 'template' : self.__pretty_template(expr),
-                'mock_methods' : self.__pretty_mock_methods(mock_methods[1:]),
-                'namespaces_end' : self.__pretty_namespaces_end(expr)
+                'mock_methods' : self.__pretty_mock_methods(mock_methods[1:])
             })
 
     def __parse(self, files, args):
@@ -266,18 +290,17 @@ class mock_generator:
         return Index.create(excludeDecls = True).parse(
             path = tmp_file
           , args = args
-          , unsaved_files = [(tmp_file, bytes(generate_includes(files), self.encode))]
+          , unsaved_files = [(tmp_file, bytes(generate_includes(files), "utf-8"))]
           , options = TranslationUnit.PARSE_SKIP_FUNCTION_BODIES | TranslationUnit.PARSE_INCOMPLETE
         )
 
-    def __init__(self, files, args, expr, path, mock_file_hpp, file_template_hpp, mock_file_cpp, file_template_cpp, encode = "utf-8"):
+    def __init__(self, files, args, expr, path, mock_file_hpp, file_template_hpp, mock_file_cpp, file_template_cpp):
         self.expr = expr
         self.path = path
         self.mock_file_hpp = mock_file_hpp
         self.file_template_hpp = file_template_hpp
         self.mock_file_cpp = mock_file_cpp
         self.file_template_cpp = file_template_cpp
-        self.encode = encode
         self.cursor = self.__parse(files, args).cursor
 
     def generate(self):
@@ -295,7 +318,7 @@ def main(args):
     if args_split:
         args, clang_args = args[:args_split[0]], args[args_split[0] + 1:]
 
-    default_config = os.path.dirname(args[0]) + "/gmock.conf"
+    default_config = "gmock.conf"
 
     parser = OptionParser(usage="usage: %prog [options] files...")
     parser.add_option("-c", "--config", dest="config", default=default_config, help="config FILE (default='gmock.conf')", metavar="FILE")
