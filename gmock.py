@@ -199,8 +199,6 @@ class mock_generator:
     def __pretty_mock_methods(self, mock_methods):
         result = []
         for i, mock_method in enumerate(mock_methods):
-            print(f'type(mock_methods)={type(mock_methods)}')
-            print(f'mock_methods={mock_methods[0]}')
             i and result.append('\n')
             result.append(mock_method.to_string())
             first = False
@@ -239,7 +237,6 @@ class mock_generator:
             tokens = [token.spelling for token in node.get_tokens()]
             file = node.location.file.name
             if node.is_pure_virtual_method():
-                print(f'type(node)={type(node)}')
                 mock_methods.setdefault(expr, [file]).append(
                     mock_method(
                          self.__get_result_type(tokens, spelling),
@@ -266,9 +263,7 @@ class mock_generator:
         }
         path = self.path + "/" + mock_file[file_type]
         not os.path.exists(os.path.dirname(path)) and os.makedirs(os.path.dirname(path))
-        print(10*'-')
-        print(self.__pretty_mock_methods(mock_methods[1:]))       
-        print(10*'-')
+        namespaces = f'{expr[:expr.rfind("::")]}::'
         with open(path, 'w') as file:
             file.write(file_template_type % {
                 'mock_file_hpp' : mock_file['hpp'],
@@ -277,12 +272,11 @@ class mock_generator:
                 'guard' : mock_file[file_type].replace('.', '_').upper(),
                 'dir' : os.path.dirname(mock_methods[0]),
                 'file' : os.path.basename(mock_methods[0]),
-                'namespaces_begin' : self.__pretty_namespaces_begin(expr),
+                'namespaces' : namespaces,
                 'interface' : interface,
                 'template_interface' : expr.split("::")[-1],
                 'template' : self.__pretty_template(expr),
-                'mock_methods' : self.__pretty_mock_methods(mock_methods[1:]),
-                'namespaces_end' : self.__pretty_namespaces_end(expr)
+                'mock_methods' : self.__pretty_mock_methods(mock_methods[1:])
             })
 
     def __parse(self, files, args):
