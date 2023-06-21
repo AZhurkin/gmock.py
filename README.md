@@ -1,18 +1,23 @@
-**Google Mock** mocks generator based on libclang
-
-[![Code Health](https://landscape.io/github/krzysztof-jusiak/gmock/master/landscape.png)](https://landscape.io/github/krzysztof-jusiak/gmock/master)
+**Google Mock** mocks generator based on libclang.
 
 ### Requirements
- + [python](http://www.python.org) (tested with 2.7 and 3.3)
- + [libclang](http://clang.llvm.org) (tested with 3.2 and 3.3)
+ + [python](http://www.python.org) (tested with 3.10.9)
 
 ### Download
 ```
-git clone --recursive git@github.com:krzysztof-jusiak/gmock.git
+git clone https://github.com/AZhurkin/gmock_gen.git
+```
+
+### Install Windows
+```
+python -m venv venv
+venv\Scripts\activate.bat
+pip install libclang clang
 ```
 
 ### Usage
 ```sh
+
 Usage: gmock.py [options] files...
 
 Options:
