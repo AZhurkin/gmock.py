@@ -208,11 +208,11 @@ class mock_generator:
         return ''.join(result)
 
     def __get_mock_methods(self, node, mock_methods, expr = ""):
-        name = str(node.displayname, self.encode)
+        name = node.displayname
         if node.kind == CursorKind.CXX_METHOD:
-            spelling = str(node.spelling, self.encode)
-            tokens = [str(token.spelling, self.encode) for token in node.get_tokens()]
-            file = str(node.location.file.name, self.encode)
+            spelling = node.spelling
+            tokens = [token.spelling for token in node.get_tokens()]
+            file = node.location.file.name
             if node.is_pure_virtual_method():
                 mock_methods.setdefault(expr, [file]).append(
                     mock_method(
@@ -266,18 +266,17 @@ class mock_generator:
         return Index.create(excludeDecls = True).parse(
             path = tmp_file
           , args = args
-          , unsaved_files = [(tmp_file, bytes(generate_includes(files), self.encode))]
+          , unsaved_files = [(tmp_file, bytes(generate_includes(files), "utf-8"))]
           , options = TranslationUnit.PARSE_SKIP_FUNCTION_BODIES | TranslationUnit.PARSE_INCOMPLETE
         )
 
-    def __init__(self, files, args, expr, path, mock_file_hpp, file_template_hpp, mock_file_cpp, file_template_cpp, encode = "utf-8"):
+    def __init__(self, files, args, expr, path, mock_file_hpp, file_template_hpp, mock_file_cpp, file_template_cpp):
         self.expr = expr
         self.path = path
         self.mock_file_hpp = mock_file_hpp
         self.file_template_hpp = file_template_hpp
         self.mock_file_cpp = mock_file_cpp
         self.file_template_cpp = file_template_cpp
-        self.encode = encode
         self.cursor = self.__parse(files, args).cursor
 
     def generate(self):
@@ -295,7 +294,7 @@ def main(args):
     if args_split:
         args, clang_args = args[:args_split[0]], args[args_split[0] + 1:]
 
-    default_config = os.path.dirname(args[0]) + "/gmock.conf"
+    default_config = "gmock.conf"
 
     parser = OptionParser(usage="usage: %prog [options] files...")
     parser.add_option("-c", "--config", dest="config", default=default_config, help="config FILE (default='gmock.conf')", metavar="FILE")
